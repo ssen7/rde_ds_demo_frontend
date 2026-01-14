@@ -2,9 +2,9 @@ import streamlit as st
 import time
 from pathlib import Path
 
-from utils.file_handler import save_uploaded_file, read_file, get_uploaded_files, delete_file
+from utils.file_handler import save_uploaded_file, read_file, get_uploaded_files, delete_file, UPLOADS_DIR
 from utils.metadata import MetadataManager
-from utils.async_processor import start_background_processing
+from utils.async_processor import start_background_processing, reprocess_with_date_column
 
 st.set_page_config(page_title="File Upload Demo", page_icon="📁", layout="wide")
 
@@ -17,6 +17,14 @@ def main():
 
     # File upload section
     st.header("Upload File")
+
+    # Option to pre-specify date column
+    pre_specified_date_col = st.text_input(
+        "Date column name (optional)",
+        value="",
+        help="Optionally specify the exact name of the date column before uploading. Leave empty for auto-detection."
+    )
+
     uploaded_file = st.file_uploader(
         "Choose a CSV or Excel file",
         type=["csv", "xlsx", "xls"],
@@ -32,8 +40,9 @@ def main():
             # Create metadata entry
             metadata_manager.create(uploaded_file.name, uploaded_file.size)
 
-            # Start async processing
-            start_background_processing(file_path)
+            # Start async processing with optional pre-specified date column
+            specified_col = pre_specified_date_col.strip() if pre_specified_date_col else None
+            start_background_processing(file_path, specified_col)
 
             st.session_state.last_uploaded = uploaded_file.name
             st.success(f"✅ File '{uploaded_file.name}' uploaded successfully! Processing started...")
@@ -94,13 +103,55 @@ def main():
 
                     if status == "completed":
                         if metadata.date_column:
-                            st.markdown(f"**Date Column:** `{metadata.date_column}`")
+                            col_label = f"`{metadata.date_column}`"
+                            if metadata.user_specified_date_column:
+                                col_label += " (user specified)"
+                            else:
+                                col_label += " (auto-detected)"
+                            st.markdown(f"**Date Column:** {col_label}")
                             if metadata.earliest_date:
                                 st.markdown(f"**Earliest Date:** {metadata.earliest_date[:10]}")
                             if metadata.latest_date:
                                 st.markdown(f"**Latest Date:** {metadata.latest_date[:10]}")
                         else:
                             st.info("No date column detected in this file.")
+
+                        # Allow changing the date column
+                        st.markdown("---")
+                        st.markdown("**Change Date Column**")
+                        try:
+                            df_cols = read_file(file_path, nrows=1)
+                            columns = ["(None - no date column)"] + list(df_cols.columns)
+                            current_idx = 0
+                            if metadata.date_column and metadata.date_column in df_cols.columns:
+                                current_idx = columns.index(metadata.date_column)
+
+                            new_date_col = st.selectbox(
+                                "Select date column",
+                                columns,
+                                index=current_idx,
+                                key=f"date_col_{filename}",
+                                help="Choose a different column to use as the date field"
+                            )
+
+                            if st.button("Apply", key=f"apply_date_{filename}"):
+                                if new_date_col == "(None - no date column)":
+                                    # Update metadata to have no date column
+                                    metadata_manager.update(
+                                        filename,
+                                        date_column=None,
+                                        earliest_date=None,
+                                        latest_date=None,
+                                        user_specified_date_column=True
+                                    )
+                                    st.rerun()
+                                elif new_date_col != metadata.date_column:
+                                    # Reprocess with the new date column
+                                    metadata_manager.update(filename, status="processing")
+                                    reprocess_with_date_column(file_path, new_date_col)
+                                    st.rerun()
+                        except Exception as e:
+                            st.error(f"Error loading columns: {e}")
                 else:
                     st.warning("No metadata found for this file.")
 

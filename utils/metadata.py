@@ -17,6 +17,7 @@ class FileMetadata:
     earliest_date: Optional[str] = None
     latest_date: Optional[str] = None
     error_message: Optional[str] = None
+    user_specified_date_column: bool = False  # True if user manually specified the date column
 
 
 class MetadataManager:
