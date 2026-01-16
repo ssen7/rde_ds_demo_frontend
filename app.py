@@ -157,16 +157,24 @@ def main():
 
                 # Delete button
                 if st.button("🗑️ Delete", key=f"delete_{filename}"):
-                    delete_file(filename)
-                    metadata_manager.delete(filename)
-                    if st.session_state.get("last_uploaded") == filename:
-                        del st.session_state.last_uploaded
-                    st.rerun()
+                    try:
+                        delete_file(filename)
+                        metadata_manager.delete(filename)
+                        if st.session_state.get("last_uploaded") == filename:
+                            del st.session_state.last_uploaded
+                        st.session_state["just_deleted"] = True
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error deleting file: {e}")
 
-    # Auto-refresh if there are pending files
-    if has_pending:
+    # Auto-refresh if there are pending files (skip if we just deleted)
+    if has_pending and not st.session_state.get("just_deleted"):
         time.sleep(1)
         st.rerun()
+
+    # Clear the deletion flag
+    if st.session_state.get("just_deleted"):
+        st.session_state["just_deleted"] = False
 
 
 if __name__ == "__main__":
