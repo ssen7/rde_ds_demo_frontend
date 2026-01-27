@@ -5,6 +5,7 @@ from pathlib import Path
 from utils.file_handler import save_uploaded_file, read_file, get_uploaded_files, delete_file, UPLOADS_DIR
 from utils.metadata import MetadataManager
 from utils.async_processor import start_background_processing, reprocess_with_date_column
+from utils.date_harmonizer import get_harmonized_csv
 
 st.set_page_config(page_title="File Upload Demo", page_icon="📁", layout="wide")
 
@@ -152,6 +153,39 @@ def main():
                                     st.rerun()
                         except Exception as e:
                             st.error(f"Error loading columns: {e}")
+
+                        # Harmonized download section
+                        st.markdown("---")
+                        st.markdown("**Harmonize Dates**")
+
+                        # Initialize session state for harmonized data
+                        harmonized_key = f"harmonized_data_{filename}"
+
+                        if harmonized_key in st.session_state:
+                            # Show download button with cached data
+                            base_name = file_path.stem
+                            st.download_button(
+                                label="⬇️ Download Harmonized CSV",
+                                data=st.session_state[harmonized_key],
+                                file_name=f"{base_name}_harmonized.csv",
+                                mime="text/csv",
+                                key=f"download_{filename}",
+                                help="Download CSV with all date columns harmonized to YYYY-MM-DD format"
+                            )
+                            if st.button("🔄 Re-harmonize", key=f"reharmonize_{filename}"):
+                                del st.session_state[harmonized_key]
+                                st.rerun()
+                        else:
+                            # Show button to trigger harmonization
+                            if st.button("🔧 Harmonize Dates", key=f"harmonize_{filename}",
+                                        help="Convert all date columns to YYYY-MM-DD format"):
+                                try:
+                                    with st.spinner("Harmonizing dates..."):
+                                        csv_data = get_harmonized_csv(file_path)
+                                        st.session_state[harmonized_key] = csv_data
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error harmonizing dates: {e}")
                 else:
                     st.warning("No metadata found for this file.")
 
@@ -162,6 +196,10 @@ def main():
                         metadata_manager.delete(filename)
                         if st.session_state.get("last_uploaded") == filename:
                             del st.session_state.last_uploaded
+                        # Clear any cached harmonized data
+                        harmonized_key = f"harmonized_data_{filename}"
+                        if harmonized_key in st.session_state:
+                            del st.session_state[harmonized_key]
                         st.session_state["just_deleted"] = True
                         st.rerun()
                     except Exception as e:
